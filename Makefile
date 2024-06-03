@@ -14,7 +14,13 @@ SET_ROS2=source /opt/ros/galactic/setup.bash
 
 .PHONY: pipeline
 pipeline:
+	$(MAKE) provision
 	$(MAKE) build
+
+.PHONY: provision
+provision:
+	vcs import < required.repos . --recursive
+	vcs --nested custom --git --args show
 
 .PHONY: ros2
 ros2:
