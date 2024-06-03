@@ -14,32 +14,22 @@ SET_ROS2=source /opt/ros/galactic/setup.bash
 
 .PHONY: pipeline
 pipeline:
-	$(MAKE) provision
 	$(MAKE) build
-
-.PHONY: provision
-provision:
-	vcs import < required.repos . --recursive
-	vcs --nested custom --git --args show
 
 .PHONY: ros2
 ros2:
-	 export PREACT_CPPCHECK_ENABLE="OFF" && cd ros2 && colcon build --packages-skip ros1_bridge preact_alg detection_py lens_calibration 
+	 colcon build
 	 
 .PHONY: clean
 clean:
-	rm -rf build install log ros2/build ros2/install ros2/log ros1/build ros1/tofcore_ros/build ros1/install ros1/log
-	rm -r -f ros2/build
+	rm -rf build install log 
 	rm -r -f dist
-	rm -r -f ros2/install
-	rm -r -f ros2/log
 	rm -r -f target
 	rm -r -f ros2/debian
 	rm -r -f ros2/.obj-x86_64-linux-gnu
 	rm -r -f ros2/target
 	rm -r -f tofcore_msgs/debian
 	rm -r -f tofcore_msgs/.obj-x86_64-linux-gnu
-	rm -r -f ros-galactic-ros1-bridge* 
 	rm -r -f ros-galactic-tofcore* 
 	rm -r -f AppDir
 	rm -r -f appimage-builder-cache

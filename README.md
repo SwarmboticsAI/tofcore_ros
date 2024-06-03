@@ -13,9 +13,6 @@ Project to build ROS packages for the sensors that work with libtofcore
 - A release of ROS2 installed and active. So far all testing has been done with
   with the Galactic release but things should work with any recent ROS2 release.
 
-  ```
-  make provision
-  ```
 
 ### Building
 
