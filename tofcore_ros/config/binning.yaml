@@ -1,0 +1,20 @@
+
+/tof_sensor:
+  ros__parameters:
+    capture_mode: "distance_amplitude"
+    streaming: true
+    # options: 6000, 12000, 24000
+    modulation_frequency: 12000
+    distance_offset: 0
+    minimum_amplitude: 0
+    flip_horizontal: false
+    flip_vertical: false
+    binning: true
+    integration_time: 500
+    # options: distance, distance_amplitude, dcs, dcs_ambient
+    stream_type: distance_amplitude
+    # NOTE missing
+    # amplitude minimum threshold: int (50)
+    # amplitude maximum threshold: int (2000)
+    # spatial filtering: bool
+    # temporal filtering: bool

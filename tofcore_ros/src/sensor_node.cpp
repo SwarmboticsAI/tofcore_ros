@@ -41,9 +41,9 @@ bool begins_with(const std::string &needle, const std::string &haystack)
 ToFSensor::ToFSensor()
     : Node("tof_sensor", "tof_sensor")
 {
-  rclcpp::QoS pub_qos(10);
-  pub_qos.reliability(rclcpp::ReliabilityPolicy::Reliable);
-  pub_qos.durability(rclcpp::DurabilityPolicy::TransientLocal);
+  rclcpp::QoS pub_qos(5);
+  pub_qos.reliability(rclcpp::ReliabilityPolicy::BestEffort);
+  pub_qos.durability(rclcpp::DurabilityPolicy::Volatile);
   // Setup ROS parameters
   rcl_interfaces::msg::ParameterDescriptor readonly_descriptor;
   readonly_descriptor.read_only = true;
