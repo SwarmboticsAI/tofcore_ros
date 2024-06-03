@@ -29,27 +29,28 @@ def launch_setup(context, *args, **kwargs):
         on_exit=Shutdown()
     )
 
-    rviz = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', LaunchConfiguration('rvizconfig')],
-        output='screen',
-        on_exit=Shutdown()
-    )
-    
-    rqt_node= Node(
-        package="rqt_reconfigure",
-        executable="rqt_reconfigure",
-        name="Configure",
-        arguments=['--force-discover'],
-        output="screen",
-        on_exit=Shutdown()
-    )
-    
+    retval = [ts_camera]
 
-    retval = [  ts_camera,   rviz, rqt_node]
+    if LaunchConfiguration('use_rviz').perform(context).lower() == 'true':
+        retval.append( Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            arguments=['-d', LaunchConfiguration('rvizconfig')],
+            output='screen',
+            on_exit=Shutdown()
+        ))
 
+    if LaunchConfiguration('use_rqt').perform(context).lower() == 'true':
+        retval.append( Node(
+            package='rqt_reconfigure',
+            executable='rqt_reconfigure',
+            name='Configure',
+            arguments=['--force-discover'],
+            output='screen',
+            on_exit=Shutdown()
+        ))
+    
     if LaunchConfiguration('with_ros1_bridge').perform(context).lower() == 'true':
         retval.append( Node(
             package='ros1_bridge', 
@@ -60,8 +61,6 @@ def launch_setup(context, *args, **kwargs):
         ))
 
     if LaunchConfiguration('with_ae').perform(context).lower() == 'true':
-
-        
         ae_params = all_params["/automatic_exposure"]["ros__parameters"]
         retval.append(Node(
             package='controls_py',
@@ -79,6 +78,16 @@ def generate_launch_description():
     pkg_share = FindPackageShare(package='tof_sensor').find('tof_sensor')
     default_rviz_config_path = os.path.join(pkg_share, 'rviz2/tofcore_basic_cloud.rviz')
     defaul_config_path = os.path.join(pkg_share, 'config/config.yaml')
+
+    use_rviz = DeclareLaunchArgument(
+        name='use_rviz',
+        default_value='false',
+        description='Whether to start rviz')
+    
+    use_rqt = DeclareLaunchArgument(
+        name='use_rqt',
+        default_value='false',
+        description='Whether to start rqt')
 
     rvizconfig = DeclareLaunchArgument(
         name='rvizconfig',
@@ -101,5 +110,7 @@ def generate_launch_description():
         with_ros1_bridge,
         config,
         with_ae,
+        use_rviz,
+        use_rqt,
         OpaqueFunction(function=launch_setup)
     ])
