@@ -52,6 +52,20 @@ bool begins_with(const std::string &needle, const std::string &haystack)
   return haystack.rfind(needle, 0) == 0;
 }
 
+cv::Mat neighbour_mask(const cv::Mat &mask, int neighbour_support)
+{
+  // find pixels that have at least <neighbour_support> neighbours that are flagged as valid
+  cv::Mat kernel = (cv::Mat_<uchar>(3, 3) << 1, 1, 1,
+                    1, 0, 1,
+                    1, 1, 1);
+  cv::Mat neighbour_count;
+  cv::filter2D(mask / 255, neighbour_count, -1, kernel, cv::Point(-1, -1), 0, cv::BORDER_CONSTANT);
+  cv::Mat mask_new;
+  cv::bitwise_and(mask, (neighbour_count >= neighbour_support), mask_new);
+
+  return mask_new;
+}
+
 ToFSensor::ToFSensor()
     : Node("tof_sensor", "tof_sensor")
 {
@@ -423,7 +437,7 @@ void ToFSensor::apply_minimum_amplitude_param(const rclcpp::Parameter &parameter
 {
   auto value = parameter.as_int();
   RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %ld", parameter.get_name().c_str(), value);
-
+  this->minimum_amplitude_ = value;
   interface_->setMinAmplitude(value);
 }
 void ToFSensor::apply_flip_horizontal_param(const rclcpp::Parameter &parameter, rcl_interfaces::msg::SetParametersResult &)
@@ -604,6 +618,45 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
     integration_msg.integration_time = integration_times;
   }
 
+  cv::Mat dist_frame = cv::Mat(frame.height(), frame.width(), CV_16UC1, (void *)frame.distance().begin());
+
+  if (this->median_filter_)
+  {
+    cv::medianBlur(dist_frame, dist_frame, this->median_kernel_);
+  }
+  if (this->bilateral_filter_)
+  {
+    cv::Mat src = cv::Mat::zeros(dist_frame.size(), CV_32FC1);
+    cv::Mat dst = cv::Mat::zeros(dist_frame.size(), CV_32FC1);
+    dist_frame.convertTo(src, CV_32FC1);
+    cv::bilateralFilter(src, dst, this->bilateral_kernel_, this->bilateral_color_, this->bilateral_space_);
+    dst.convertTo(dist_frame, CV_16UC1);
+  }
+  if (this->gradient_filter_)
+  {
+    // apply gradient filtering to cloud
+    cv::Mat grad_x, grad_y;
+    cv::Mat dst = cv::Mat::zeros(dist_frame.size(), CV_32FC1);
+    dist_frame.convertTo(dst, CV_32FC1);
+
+    // Compute the Laplacian
+    cv::Mat laplacian;
+    cv::Laplacian(dist_frame, laplacian, CV_64F);
+
+    // Calculate the magnitude of the gradient
+    cv::Mat laplacian_abs;
+    cv::Mat grad_mask = cv::abs(laplacian) > this->gradient_threshold_;
+
+    cv::Mat mask_valid;
+    cv::bitwise_not(grad_mask, mask_valid);
+
+    // ensure enough neighbours of each pixel satisfy the gradient condition
+    mask_valid = neighbour_mask(mask_valid, this->gradient_filter_support_);
+    cv::Mat mask;
+    cv::bitwise_not(mask_valid, mask);
+    dist_frame.setTo(cv::Scalar(0), mask);
+  }
+
   sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
   modifier.resize(frame.height() * frame.width());
   modifier.setPointCloud2Fields(
@@ -630,7 +683,7 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
   sensor_msgs::PointCloud2Iterator<uint8_t> it_valid{cloud_msg, "valid"};
   sensor_msgs::PointCloud2Iterator<uint16_t> it_phase{cloud_msg, "distance"};
 
-  auto it_d = frame.distance().begin();
+  auto it_d = (const unsigned short *)dist_frame.datastart;
   auto it_a = frame.amplitude().begin();
   uint32_t count = 0;
   while (it_d != frame.distance().end())
@@ -641,7 +694,10 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
     int valid = 0;
     double px, py, pz;
     px = py = pz = 0.1;
-    if (distance > 0 && distance < 64000)
+
+    bool invalid = *it_a < this->minimum_amplitude_ || *it_a >= this->maximum_amplitude_;
+
+    if (distance > 0 && distance < 64000 && !invalid)
     {
       if (frame.width() == 160)
         cartesianTransform_.transformPixel(2 * x, 2 * y, distance, px, py, pz);

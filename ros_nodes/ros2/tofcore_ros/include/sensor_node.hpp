@@ -22,6 +22,10 @@
 
 #include <tofcore_msgs/msg/integration_time.hpp>
 
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/opencv.hpp>
+
 /// ToFSensor ROS2 node class for interacting with a PreAct ToF sensor/camera
 class ToFSensor : public rclcpp::Node
 {
@@ -47,6 +51,7 @@ class ToFSensor : public rclcpp::Node
     int bilateral_kernel_{5};
     int bilateral_color_{75};
     int bilateral_space_{75};
+    int minimum_amplitude_{0};
     int maximum_amplitude_{2000};
     bool gradient_filter_{true};
     int gradient_kernel_{1};

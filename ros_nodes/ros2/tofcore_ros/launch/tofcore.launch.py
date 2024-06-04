@@ -78,7 +78,7 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     pkg_share = FindPackageShare(package='tof_sensor').find('tof_sensor')
     default_rviz_config_path = os.path.join(pkg_share, 'rviz2/tofcore_basic_cloud.rviz')
-    defaul_config_path = os.path.join(pkg_share, 'config/config.yaml')
+    default_config_path = os.path.join(pkg_share, 'config/config.yaml')
 
     rvizconfig = DeclareLaunchArgument(
         name='rvizconfig',
@@ -87,7 +87,7 @@ def generate_launch_description():
     
     config = DeclareLaunchArgument(
         name='config',
-        default_value=defaul_config_path,
+        default_value=default_config_path,
         description='Absolute path to ae config file')
   
     with_ros1_bridge = DeclareLaunchArgument(name='with_ros1_bridge', default_value='false',

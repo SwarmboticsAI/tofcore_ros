@@ -1,0 +1,20 @@
+/tof_sensor:
+  ros__parameters:
+    integration_time: 500
+    modulation_frequency: 12000
+    minimum_amplitude: 10
+    maximum_amplitude: 2000
+    flip_horizontal: false
+    flip_vertical: false
+    binning: true
+    median_filter: true
+    median_kernel: 3
+    bilateral_filter: false
+    bilateral_kernel: 5
+    bilateral_color: 75
+    bilateral_space: 75
+    gradient_filter: true
+    gradient_kernel: 1
+    gradient_threshold: 250
+    gradient_filter_support: 6
+    stream_type: distance_amplitude
