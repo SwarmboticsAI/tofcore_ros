@@ -41,6 +41,18 @@ class ToFSensor : public rclcpp::Node
     tofcore::CartesianTransform cartesianTransform_;
     std::string sensor_location_;
 
+    bool median_filter_{false};
+    int median_kernel_{3};
+    bool bilateral_filter_{false};
+    int bilateral_kernel_{5};
+    int bilateral_color_{75};
+    int bilateral_space_{75};
+    int maximum_amplitude_{2000};
+    bool gradient_filter_{true};
+    int gradient_kernel_{1};
+    int gradient_threshold_{50};
+    int gradient_filter_support_{6};
+
   public:
     /// Standard constructor
     ToFSensor();
@@ -86,6 +98,9 @@ class ToFSensor : public rclcpp::Node
     void apply_binning_param(const rclcpp::Parameter& parameter, rcl_interfaces::msg::SetParametersResult& result);
     void apply_sensor_name_param(const rclcpp::Parameter& parameter, rcl_interfaces::msg::SetParametersResult& result);
     void apply_sensor_location_param(const rclcpp::Parameter& parameter, rcl_interfaces::msg::SetParametersResult& result);
+
+    void apply_param(bool& param, const rclcpp::Parameter& parameter);
+    void apply_param(int& param, const rclcpp::Parameter& parameter);
 
 };
 
