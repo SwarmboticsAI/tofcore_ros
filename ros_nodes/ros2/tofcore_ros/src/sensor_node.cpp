@@ -26,16 +26,44 @@ constexpr auto STREAMING_STATE = "streaming";
 constexpr auto MODULATION_FREQUENCY = "modulation_frequency";
 constexpr auto DISTANCE_OFFSET = "distance_offset";
 constexpr auto MINIMUM_AMPLITUDE = "minimum_amplitude";
+constexpr auto MAXIMUM_AMPLITUDE = "maximum_amplitude";
 constexpr auto FLIP_HORIZONTAL = "flip_horizontal";
 constexpr auto FLIP_VERITCAL = "flip_vertical";
 constexpr auto BINNING = "binning";
 constexpr auto SENSOR_NAME = "sensor_name";
 constexpr auto SENSOR_LOCATION = "sensor_location";
 
+// Filter parameters
+constexpr auto MEDIAN_FILTER = "median_filter";
+constexpr auto MEDIAN_KERNEL = "median_kernel";
+constexpr auto BILATERAL_FILTER = "bilateral_filter";
+constexpr auto BILATERAL_KERNEL = "bilateral_kernel";
+constexpr auto BILATERAL_COLOR = "bilateral_color";
+constexpr auto BILATERAL_SPACE = "bilateral_space";
+
+constexpr auto GRADIENT_FILTER = "gradient_filter";
+constexpr auto GRADIENT_KERNEL = "gradient_kernel";
+constexpr auto GRADIENT_THRESHOLD = "gradient_threshold";
+constexpr auto GRADIENT_FILTER_SUPPORT = "gradient_filter_support";
+
 /// Quick helper function that return true if the string haystack starts with the string needle
 bool begins_with(const std::string &needle, const std::string &haystack)
 {
   return haystack.rfind(needle, 0) == 0;
+}
+
+cv::Mat neighbour_mask(const cv::Mat &mask, int neighbour_support)
+{
+  // find pixels that have at least <neighbour_support> neighbours that are flagged as valid
+  cv::Mat kernel = (cv::Mat_<uchar>(3, 3) << 1, 1, 1,
+                    1, 0, 1,
+                    1, 1, 1);
+  cv::Mat neighbour_count;
+  cv::filter2D(mask / 255, neighbour_count, -1, kernel, cv::Point(-1, -1), 0, cv::BORDER_CONSTANT);
+  cv::Mat mask_new;
+  cv::bitwise_and(mask, (neighbour_count >= neighbour_support), mask_new);
+
+  return mask_new;
 }
 
 ToFSensor::ToFSensor()
@@ -78,9 +106,21 @@ ToFSensor::ToFSensor()
   this->declare_parameter(MODULATION_FREQUENCY, 12000);
   this->declare_parameter(DISTANCE_OFFSET, 0);
   this->declare_parameter(MINIMUM_AMPLITUDE, 0);
+  this->declare_parameter(MAXIMUM_AMPLITUDE, 2000);
   this->declare_parameter(FLIP_HORIZONTAL, false);
   this->declare_parameter(FLIP_VERITCAL, false);
   this->declare_parameter(BINNING, false);
+
+  this->declare_parameter(MEDIAN_FILTER, false);
+  this->declare_parameter(MEDIAN_KERNEL, 3);
+  this->declare_parameter(BILATERAL_FILTER, false);
+  this->declare_parameter(BILATERAL_KERNEL, 5);
+  this->declare_parameter(BILATERAL_COLOR, 75);
+  this->declare_parameter(BILATERAL_SPACE, 75);
+  this->declare_parameter(GRADIENT_FILTER, false);
+  this->declare_parameter(GRADIENT_KERNEL, 1);
+  this->declare_parameter(GRADIENT_THRESHOLD, 50);
+  this->declare_parameter(GRADIENT_FILTER_SUPPORT, 6);
 
   // Reading optional values from sensor
   std::optional<std::string> init_name = interface_->getSensorName();
@@ -180,6 +220,10 @@ rcl_interfaces::msg::SetParametersResult ToFSensor::on_set_parameters_callback(
     {
       this->apply_minimum_amplitude_param(parameter, result);
     }
+    else if (name == MAXIMUM_AMPLITUDE)
+    {
+      this->apply_param(maximum_amplitude_, parameter);
+    }
     else if (name == FLIP_HORIZONTAL)
     {
       this->apply_flip_horizontal_param(parameter, result);
@@ -199,6 +243,46 @@ rcl_interfaces::msg::SetParametersResult ToFSensor::on_set_parameters_callback(
     else if (name == SENSOR_LOCATION)
     {
       this->apply_sensor_location_param(parameter, result);
+    }
+    else if (name == MEDIAN_FILTER)
+    {
+      this->apply_param(median_filter_, parameter);
+    }
+    else if (name == MEDIAN_KERNEL)
+    {
+      this->apply_param(median_kernel_, parameter);
+    }
+    else if (name == BILATERAL_FILTER)
+    {
+      this->apply_param(bilateral_filter_, parameter);
+    }
+    else if (name == BILATERAL_KERNEL)
+    {
+      this->apply_param(bilateral_kernel_, parameter);
+    }
+    else if (name == BILATERAL_COLOR)
+    {
+      this->apply_param(bilateral_color_, parameter);
+    }
+    else if (name == BILATERAL_SPACE)
+    {
+      this->apply_param(bilateral_space_, parameter);
+    }
+    else if (name == GRADIENT_FILTER)
+    {
+      this->apply_param(gradient_filter_, parameter);
+    }
+    else if (name == GRADIENT_KERNEL)
+    {
+      this->apply_param(gradient_kernel_, parameter);
+    }
+    else if (name == GRADIENT_THRESHOLD)
+    {
+      this->apply_param(gradient_threshold_, parameter);
+    }
+    else if (name == GRADIENT_FILTER_SUPPORT)
+    {
+      this->apply_param(gradient_filter_support_, parameter);
     }
   }
   return result;
@@ -353,7 +437,7 @@ void ToFSensor::apply_minimum_amplitude_param(const rclcpp::Parameter &parameter
 {
   auto value = parameter.as_int();
   RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %ld", parameter.get_name().c_str(), value);
-
+  this->minimum_amplitude_ = value;
   interface_->setMinAmplitude(value);
 }
 void ToFSensor::apply_flip_horizontal_param(const rclcpp::Parameter &parameter, rcl_interfaces::msg::SetParametersResult &)
@@ -410,6 +494,21 @@ void ToFSensor::apply_sensor_location_param(const rclcpp::Parameter &parameter, 
   interface_->storeSettings();
   this->sensor_location_ = value;
 }
+
+void ToFSensor::apply_param(bool& param, const rclcpp::Parameter& parameter)
+{
+  auto value = parameter.as_bool();
+  RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %s", parameter.get_name().c_str(), (value ? "true" : "false"));
+  param = value;
+}
+
+void ToFSensor::apply_param(int& param, const rclcpp::Parameter& parameter)
+{
+  auto value = parameter.as_int();
+  RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %ld", parameter.get_name().c_str(), value);
+  param = value;
+}
+
 void ToFSensor::publish_tempData(const tofcore::Measurement_T &frame, const rclcpp::Time &stamp)
 {
   const std::array<float, 4> defaultTemps{0.0, 0.0, 0.0, 0.0};
@@ -519,6 +618,45 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
     integration_msg.integration_time = integration_times;
   }
 
+  cv::Mat dist_frame = cv::Mat(frame.height(), frame.width(), CV_16UC1, (void *)frame.distance().begin());
+
+  if (this->median_filter_)
+  {
+    cv::medianBlur(dist_frame, dist_frame, this->median_kernel_);
+  }
+  if (this->bilateral_filter_)
+  {
+    cv::Mat src = cv::Mat::zeros(dist_frame.size(), CV_32FC1);
+    cv::Mat dst = cv::Mat::zeros(dist_frame.size(), CV_32FC1);
+    dist_frame.convertTo(src, CV_32FC1);
+    cv::bilateralFilter(src, dst, this->bilateral_kernel_, this->bilateral_color_, this->bilateral_space_);
+    dst.convertTo(dist_frame, CV_16UC1);
+  }
+  if (this->gradient_filter_)
+  {
+    // apply gradient filtering to cloud
+    cv::Mat grad_x, grad_y;
+    cv::Mat dst = cv::Mat::zeros(dist_frame.size(), CV_32FC1);
+    dist_frame.convertTo(dst, CV_32FC1);
+
+    // Compute the Laplacian
+    cv::Mat laplacian;
+    cv::Laplacian(dist_frame, laplacian, CV_64F);
+
+    // Calculate the magnitude of the gradient
+    cv::Mat laplacian_abs;
+    cv::Mat grad_mask = cv::abs(laplacian) > this->gradient_threshold_;
+
+    cv::Mat mask_valid;
+    cv::bitwise_not(grad_mask, mask_valid);
+
+    // ensure enough neighbours of each pixel satisfy the gradient condition
+    mask_valid = neighbour_mask(mask_valid, this->gradient_filter_support_);
+    cv::Mat mask;
+    cv::bitwise_not(mask_valid, mask);
+    dist_frame.setTo(cv::Scalar(0), mask);
+  }
+
   sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
   modifier.resize(frame.height() * frame.width());
   modifier.setPointCloud2Fields(
@@ -545,7 +683,7 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
   sensor_msgs::PointCloud2Iterator<uint8_t> it_valid{cloud_msg, "valid"};
   sensor_msgs::PointCloud2Iterator<uint16_t> it_phase{cloud_msg, "distance"};
 
-  auto it_d = frame.distance().begin();
+  auto it_d = (const unsigned short *)dist_frame.datastart;
   auto it_a = frame.amplitude().begin();
   uint32_t count = 0;
   while (it_d != frame.distance().end())
@@ -556,7 +694,10 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
     int valid = 0;
     double px, py, pz;
     px = py = pz = 0.1;
-    if (distance > 0 && distance < 64000)
+
+    bool invalid = *it_a < this->minimum_amplitude_ || *it_a >= this->maximum_amplitude_;
+
+    if (distance > 0 && distance < 64000 && !invalid)
     {
       if (frame.width() == 160)
         cartesianTransform_.transformPixel(2 * x, 2 * y, distance, px, py, pz);

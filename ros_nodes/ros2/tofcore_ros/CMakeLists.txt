@@ -18,6 +18,7 @@ find_package(tofcore_msgs REQUIRED)
 find_package(rosidl_typesupport_c REQUIRED)
 find_package(rosidl_typesupport_cpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(OpenCV REQUIRED)
 
 
 if(NOT TARGET ToFCore::ToFCore)
@@ -40,7 +41,7 @@ target_include_directories(tof_sensor PUBLIC
   )
 target_compile_features(tof_sensor PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
 ament_target_dependencies(tof_sensor rclcpp std_msgs sensor_msgs tofcore_msgs )
-target_link_libraries(tof_sensor tofcore)
+target_link_libraries(tof_sensor tofcore ${OpenCV_LIBS})
 
 
 
