@@ -76,7 +76,9 @@ ToFSensor::ToFSensor()
   rcl_interfaces::msg::ParameterDescriptor readonly_descriptor;
   readonly_descriptor.read_only = true;
 
-  interface_.reset(new tofcore::Sensor("/dev/ttyACM0"));
+  std::vector<tofcore::device_info_t> devices = tofcore::find_all_devices(std::chrono::seconds(5), std::numeric_limits<int>::max());
+  interface_.reset(new tofcore::Sensor(devices.begin()->connector_uri));
+
   interface_->stopStream();
 
   // Get sensor info
