@@ -46,6 +46,10 @@ constexpr auto GRADIENT_KERNEL = "gradient_kernel";
 constexpr auto GRADIENT_THRESHOLD = "gradient_threshold";
 constexpr auto GRADIENT_FILTER_SUPPORT = "gradient_filter_support";
 
+// hdr parameters
+constexpr auto HDR_ENABLE = "hdr_enable";
+constexpr auto HDR_INTEGRATIONS = "hdr_integrations";
+
 /// Quick helper function that return true if the string haystack starts with the string needle
 bool begins_with(const std::string &needle, const std::string &haystack)
 {
@@ -79,7 +83,7 @@ ToFSensor::ToFSensor()
   std::vector<tofcore::device_info_t> devices = tofcore::find_all_devices(std::chrono::seconds(5), std::numeric_limits<int>::max());
   interface_.reset(new tofcore::Sensor(devices.begin()->connector_uri));
 
-  interface_->stopStream();
+  // interface_->stopStream();
 
   // Get sensor info
   TofComm::versionData_t versionData{};
@@ -123,6 +127,9 @@ ToFSensor::ToFSensor()
   this->declare_parameter(GRADIENT_KERNEL, 1);
   this->declare_parameter(GRADIENT_THRESHOLD, 50);
   this->declare_parameter(GRADIENT_FILTER_SUPPORT, 6);
+
+  this->declare_parameter(HDR_ENABLE, false);
+  this->declare_parameter(HDR_INTEGRATIONS, "");
 
   // Reading optional values from sensor
   std::optional<std::string> init_name = interface_->getSensorName();
@@ -285,6 +292,21 @@ rcl_interfaces::msg::SetParametersResult ToFSensor::on_set_parameters_callback(
     else if (name == GRADIENT_FILTER_SUPPORT)
     {
       this->apply_param(gradient_filter_support_, parameter);
+    }
+    else if (name == HDR_ENABLE)
+    {
+      this->apply_param(hdr_enable_, parameter);
+      this->apply_vsm_settings();
+    }
+    else if (name == HDR_INTEGRATIONS)
+    {
+      this->apply_param(hdr_integrations_, parameter);
+      this->apply_vsm_settings();
+    }
+    else
+    {
+      result.successful = false;
+      result.reason = "Unknown parameter: "s + name;
     }
   }
   return result;
@@ -511,6 +533,13 @@ void ToFSensor::apply_param(int& param, const rclcpp::Parameter& parameter)
   param = value;
 }
 
+void ToFSensor::apply_param(std::string& param, const rclcpp::Parameter& parameter)
+{
+  auto value = parameter.as_string();
+  RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %s", parameter.get_name().c_str(), value.c_str());
+  param = value;
+}
+
 void ToFSensor::publish_tempData(const tofcore::Measurement_T &frame, const rclcpp::Time &stamp)
 {
   const std::array<float, 4> defaultTemps{0.0, 0.0, 0.0, 0.0};
@@ -602,8 +631,69 @@ void ToFSensor::publish_distData(const tofcore::Measurement_T &frame, rclcpp::Pu
   pub.publish(img);
 }
 
+void ToFSensor::update_hdr_frame(const tofcore::Measurement_T& frame)
+{
+  // verify hdr dist and amp frames are initialized same size as frame
+  if (hdr_dist_frame_.empty() || hdr_dist_frame_.cols != frame.width() || hdr_dist_frame_.rows != frame.height() || hdr_integration_counter_ == 0)
+  {
+    hdr_dist_frame_ = cv::Mat(frame.height(), frame.width(), CV_16UC1, (void *)frame.distance().begin()).clone();
+    hdr_amp_frame_ = cv::Mat(frame.height(), frame.width(), CV_16UC1, (void *)frame.amplitude().begin()).clone();
+
+    cv::Mat amplitude_threshold_mask = hdr_amp_frame_ >= maximum_amplitude_;
+    hdr_dist_frame_.setTo(cv::Scalar(0), amplitude_threshold_mask);
+    hdr_amp_frame_.setTo(cv::Scalar(0), amplitude_threshold_mask);
+
+    hdr_integration_counter_ = 1;
+
+    return;
+  }
+
+  auto it_amp_dst = (unsigned short *) hdr_amp_frame_.datastart;
+  auto it_amp_src = frame.amplitude().begin();
+  auto it_dist_dst = (unsigned short *) hdr_dist_frame_.datastart;
+  auto it_dist_src = frame.distance().begin();
+
+  while (it_dist_src != frame.distance().end())
+  {
+    if (*it_amp_src > *it_amp_dst && *it_amp_src < maximum_amplitude_ && *it_dist_src > 0 && *it_dist_src < 64000)
+    {
+      *it_amp_dst = *it_amp_src;
+      *it_dist_dst = *it_dist_src;
+    }
+
+    it_amp_dst++;
+    it_amp_src++;
+    it_dist_dst++;
+    it_dist_src++;
+  }
+}
+
 void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::Publisher<sensor_msgs::msg::PointCloud2> &pub, rclcpp::Publisher<tofcore_msgs::msg::IntegrationTime> &cust_pub, const rclcpp::Time &stamp)
 {
+  cv::Mat dist_frame;
+  cv::Mat amp_frame;
+
+  if (hdr_enable_ && hdr_count_ > 1)
+  {
+    update_hdr_frame(frame);
+
+    if (hdr_integration_counter_ < hdr_count_)
+    {
+      hdr_integration_counter_++;
+      return;
+    }
+
+    hdr_integration_counter_ = 0;
+
+    amp_frame = hdr_amp_frame_;
+    dist_frame = hdr_dist_frame_;
+  }
+  else
+  {
+    dist_frame = cv::Mat(frame.height(), frame.width(), CV_16UC1, (void *)frame.distance().begin());
+    amp_frame = cv::Mat(frame.height(), frame.width(), CV_16UC1, (void *)frame.amplitude().begin());
+  }
+
   sensor_msgs::msg::PointCloud2 cloud_msg{};
   cloud_msg.header.stamp = stamp;
   cloud_msg.header.frame_id = this->sensor_location_;
@@ -619,8 +709,6 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
     auto integration_times = *std::move(frame.integration_time());
     integration_msg.integration_time = integration_times;
   }
-
-  cv::Mat dist_frame = cv::Mat(frame.height(), frame.width(), CV_16UC1, (void *)frame.distance().begin());
 
   if (this->median_filter_)
   {
@@ -686,9 +774,9 @@ void ToFSensor::publish_pointCloud(const tofcore::Measurement_T &frame, rclcpp::
   sensor_msgs::PointCloud2Iterator<uint16_t> it_phase{cloud_msg, "distance"};
 
   auto it_d = (const unsigned short *)dist_frame.datastart;
-  auto it_a = frame.amplitude().begin();
+  auto it_a = (const unsigned short *)amp_frame.datastart;
   uint32_t count = 0;
-  while (it_d != frame.distance().end())
+  while (it_d != (const unsigned short *)dist_frame.dataend)
   {
     auto distance = *it_d;
     auto y = count / frame.width();
@@ -829,5 +917,72 @@ void ToFSensor::updateFrame(const tofcore::Measurement_T &frame)
   {
     break;
   }
+  }
+}
+
+// TODO ability to set different modulation frequencies
+void ToFSensor::apply_vsm_settings()
+{
+  TofComm::VsmControl_T vsmControl{};
+
+  if (hdr_enable_)
+  {
+    std::vector<std::string> integration_times;
+    boost::split(integration_times, hdr_integrations_, boost::is_any_of(", "), boost::token_compress_on);
+
+    RCLCPP_INFO(this->get_logger(), "HDR enabled, %li integrations", integration_times.size());
+    RCLCPP_INFO(this->get_logger(), "HDR integrations: %s", hdr_integrations_.c_str());
+
+    vsmControl.m_numberOfElements = integration_times.size();
+
+    hdr_count_ = integration_times.size();
+    uint16_t modulationFreqKhz = interface_->getModulation().value_or(12000);
+
+    for (long unsigned int n = 0; n < hdr_count_; ++n)
+    {
+      try
+      {
+        vsmControl.m_elements[n].m_integrationTimeUs = std::stoi(integration_times[n]);
+        RCLCPP_INFO(this->get_logger(), "VSM Element %ld : %d", n, vsmControl.m_elements[n].m_integrationTimeUs);
+      }
+      catch (std::invalid_argument &e)
+      {
+        // if no conversion could be performed
+        RCLCPP_INFO(this->get_logger(), "Invalid integration time argument, defaulting to 500us");
+        vsmControl.m_elements[n].m_integrationTimeUs = 500;
+      }
+      catch (std::out_of_range &e)
+      {
+        // if the converted value would fall out of the range of the result type
+        // or if the underlying function (std::strtol or std::strtoull) sets errno
+        // to ERANGE.
+        RCLCPP_INFO(this->get_logger(), "Out of range, defaulting to 500us");
+        vsmControl.m_elements[n].m_integrationTimeUs = 500;
+      }
+      catch (...)
+      {
+        // everything else
+        RCLCPP_INFO(this->get_logger(), "Some other error, defaulting to 500us");
+        vsmControl.m_elements[n].m_integrationTimeUs = 500;
+      }
+      vsmControl.m_elements[n].m_modulationFreqKhz = modulationFreqKhz;
+    }
+  }
+  else
+  {
+    RCLCPP_INFO(this->get_logger(), "HDR disabled");
+    vsmControl.m_numberOfElements = 0;
+  }
+
+  interface_->setVsm(vsmControl);
+
+  std::optional<TofComm::VsmControl_T> vsmControlOut = interface_->getVsmSettings();
+  if (vsmControlOut)
+  {
+    RCLCPP_INFO(this->get_logger(), "VSM settings applied, %i elements", vsmControlOut->m_numberOfElements);
+  }
+  else
+  {
+    RCLCPP_ERROR(this->get_logger(), "Failed to apply VSM settings");
   }
 }
