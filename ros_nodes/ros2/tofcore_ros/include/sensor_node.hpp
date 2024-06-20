@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <boost/algorithm/string.hpp>
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -58,6 +59,15 @@ class ToFSensor : public rclcpp::Node
     int gradient_threshold_{50};
     int gradient_filter_support_{6};
 
+    // hdr vsm parameters
+    bool hdr_enable_{false};
+    std::string hdr_integrations_{""};
+    long unsigned int hdr_count_{0};
+    long unsigned int hdr_integration_counter_{0};
+
+    cv::Mat hdr_dist_frame_;
+    cv::Mat hdr_amp_frame_;
+
   public:
     /// Standard constructor
     ToFSensor();
@@ -89,6 +99,10 @@ class ToFSensor : public rclcpp::Node
     /// Callback method provided to the tofcore library to notify us when new frame data has come in
     void updateFrame(const tofcore::Measurement_T& frame);
 
+    void apply_vsm_settings();
+
+    void update_hdr_frame(const tofcore::Measurement_T& frame);
+
     /// Helper methods to send parameter updates down to the sensor
     void apply_stream_type_param(const rclcpp::Parameter& parameter, rcl_interfaces::msg::SetParametersResult& result);
     void apply_integration_time_param(const rclcpp::Parameter& parameter, rcl_interfaces::msg::SetParametersResult& result); 
@@ -106,6 +120,7 @@ class ToFSensor : public rclcpp::Node
 
     void apply_param(bool& param, const rclcpp::Parameter& parameter);
     void apply_param(int& param, const rclcpp::Parameter& parameter);
+    void apply_param(std::string& param, const rclcpp::Parameter& parameter);
 
 };
 
