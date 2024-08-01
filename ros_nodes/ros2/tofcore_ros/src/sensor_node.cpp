@@ -136,10 +136,10 @@ ToFSensor::ToFSensor()
   std::optional<std::string> init_location = interface_->getSensorLocation();
   std::optional<short unsigned int> init_integration = interface_->getIntegrationTime();
 
-  if (init_name)
-    this->declare_parameter(SENSOR_NAME, *init_name);
-  else
-    this->declare_parameter(SENSOR_NAME, "Mojave");
+  // if (init_name)
+  //   this->declare_parameter(SENSOR_NAME, *init_name);
+  // else
+  //   this->declare_parameter(SENSOR_NAME, "Mojave");
 
   if (init_location)
   {
@@ -245,10 +245,10 @@ rcl_interfaces::msg::SetParametersResult ToFSensor::on_set_parameters_callback(
     {
       this->apply_binning_param(parameter, result);
     }
-    else if (name == SENSOR_NAME)
-    {
-      this->apply_sensor_name_param(parameter, result);
-    }
+    // else if (name == SENSOR_NAME)
+    // {
+    //   this->apply_sensor_name_param(parameter, result);
+    // }
     else if (name == SENSOR_LOCATION)
     {
       this->apply_sensor_location_param(parameter, result);
@@ -501,21 +501,22 @@ void ToFSensor::apply_binning_param(const rclcpp::Parameter &parameter, rcl_inte
 
   interface_->setBinning(value, value);
 }
-void ToFSensor::apply_sensor_name_param(const rclcpp::Parameter &parameter, rcl_interfaces::msg::SetParametersResult &)
-{
-  auto value = parameter.as_string();
-  RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %s", parameter.get_name().c_str(), value.c_str());
+// void ToFSensor::apply_sensor_name_param(const rclcpp::Parameter &parameter, rcl_interfaces::msg::SetParametersResult &)
+// {
+//   auto value = parameter.as_string();
+//   RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %s", parameter.get_name().c_str(), value.c_str());
 
-  interface_->setSensorName(value);
-  interface_->storeSettings();
-}
+//   interface_->setSensorName(value);
+//   interface_->storeSettings();
+// }
 void ToFSensor::apply_sensor_location_param(const rclcpp::Parameter &parameter, rcl_interfaces::msg::SetParametersResult &)
 {
   auto value = parameter.as_string();
   RCLCPP_INFO(this->get_logger(), "Handling parameter \"%s\" : %s", parameter.get_name().c_str(), value.c_str());
 
-  interface_->setSensorLocation(value);
-  interface_->storeSettings();
+  // interface_->setSensorLocation(value);
+  // FIXME storeSettings can cause device reset disrupting connection
+  // interface_->storeSettings();
   this->sensor_location_ = value;
 }
 
